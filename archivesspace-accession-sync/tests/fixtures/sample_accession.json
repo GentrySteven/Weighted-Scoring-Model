@@ -1,0 +1,75 @@
+{
+  "uri": "/repositories/2/accessions/1",
+  "lock_version": 3,
+  "title": "John Smith Papers",
+  "display_string": "John Smith Papers, 1950-2020",
+  "id_0": "2023",
+  "id_1": "001",
+  "id_2": "",
+  "id_3": "",
+  "accession_date": "2023-01-15",
+  "content_description": "Collection contains correspondence, photographs, manuscripts, and a small number of floppy disks. Some oversized maps and architectural drawings are included.",
+  "condition_description": "Generally good condition. Some fragile newspaper clippings. Photographs show signs of curling.",
+  "inventory": "Box 1: Correspondence (1950-1970). Box 2: Photographs and negatives. Box 3: Manuscripts and drafts. Box 4: Miscellaneous including 3.5 inch floppy disks.",
+  "access_restrictions": true,
+  "access_restrictions_note": "Some materials are restricted. Personnel records are closed for 30 years from date of creation.",
+  "use_restrictions": false,
+  "use_restrictions_note": "",
+  "publish": true,
+  "suppressed": false,
+  "collection_management": {
+    "lock_version": 1,
+    "processing_status": "in_progress",
+    "processing_priority": "high",
+    "processing_plan": "Arrange and describe at the folder level."
+  },
+  "extents": [
+    {
+      "lock_version": 0,
+      "number": "3.5",
+      "extent_type": "linear_feet",
+      "portion": "whole"
+    },
+    {
+      "lock_version": 0,
+      "number": "500",
+      "extent_type": "megabytes",
+      "portion": "part"
+    }
+  ],
+  "linked_agents": [
+    {
+      "ref": "/agents/people/1",
+      "role": "source",
+      "terms": [],
+      "relator": ""
+    },
+    {
+      "ref": "/agents/corporate_entities/5",
+      "role": "subject",
+      "terms": [
+        {"term": "Faculty", "term_type": "function"},
+        {"term": "History Department", "term_type": "topical"}
+      ],
+      "relator": ""
+    }
+  ],
+  "subjects": [
+    {"ref": "/subjects/10"},
+    {"ref": "/subjects/25"}
+  ],
+  "classifications": [
+    {"ref": "/repositories/2/classifications/1"}
+  ],
+  "instances": [
+    {
+      "instance_type": "mixed_materials",
+      "sub_container": {
+        "top_container": {
+          "ref": "/repositories/2/top_containers/100"
+        }
+      }
+    }
+  ],
+  "user_defined": {}
+}

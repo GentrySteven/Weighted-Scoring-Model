@@ -1,0 +1,18 @@
+archivesspace:
+  base_url: "http://localhost:8089"
+  repository_id: 2
+output:
+  format: "excel"
+  spreadsheet_name: "Accession Data and Scores"
+excel:
+  target_directory: "C:\\Users\\Archivist\\Documents\\accession-sync"
+scheduling:
+  frequency: "weekly"
+  time: "18:00"
+logging:
+  level: "standard"
+  directory: "C:\\Users\\Archivist\\Documents\\accession-sync\\logs"
+cache:
+  directory: "C:\\Users\\Archivist\\Documents\\accession-sync\\cache"
+preview:
+  directory: "C:\\Users\\Archivist\\Documents\\accession-sync\\preview"

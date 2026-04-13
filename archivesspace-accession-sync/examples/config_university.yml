@@ -1,0 +1,24 @@
+archivesspace:
+  base_url: "https://archivesspace.university.edu/api"
+  repository_id: 2
+output:
+  format: "google_sheets"
+  spreadsheet_name: "Accession Data and Scores"
+google_sheets:
+  folder_id: "your_folder_id"
+  sharing:
+    - email: "head.archivist@university.edu"
+      role: "writer"
+      notify: true
+scheduling:
+  frequency: "daily"
+  time: "20:00"
+notifications:
+  recipient_email: "head.archivist@university.edu"
+logging:
+  level: "standard"
+  directory: "/home/archivist/accession-sync/logs"
+cache:
+  directory: "/home/archivist/accession-sync/cache"
+preview:
+  directory: "/home/archivist/accession-sync/preview"
