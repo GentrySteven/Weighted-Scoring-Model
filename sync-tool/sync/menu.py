@@ -375,3 +375,13 @@ class Menu:
             answer = input(f"  {q}: [{default}]: ").strip()
             return answer if answer else default
         return input(f"  {q}: ").strip()
+
+    @staticmethod
+    def prompt_password(question: str) -> str:
+        """Prompt for password input with masked typing (not visible on screen)."""
+        import getpass
+        q = question.rstrip().rstrip(":")
+        try:
+            return getpass.getpass(f"  {q}: ")
+        except (EOFError, KeyboardInterrupt):
+            return ""
