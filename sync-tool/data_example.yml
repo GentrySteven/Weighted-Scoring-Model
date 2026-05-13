@@ -1,0 +1,145 @@
+# =============================================================================
+# archivesspace-accession-sync Data File
+# =============================================================================
+# This file is managed by the setup wizard and interactive menu.
+# Direct edits are possible for advanced users, but take care to
+# preserve proper YAML formatting to avoid syntax errors.
+#
+# To regenerate this file, run the setup wizard:
+#   python accession_sync.py
+#   Then select "Reconfigure settings" from the menu.
+# =============================================================================
+
+# Extent type categorizations and conversion factors.
+# Each type is categorized as "physical" or "digital" with a
+# conversion factor to linear feet or gigabytes respectively.
+# Example:
+#   linear_feet:
+#     category: physical
+#     conversion_factor: 1.0
+extent_types: {}
+
+# Keywords for detecting material formats.
+# Each format has a list of keywords that trigger detection.
+format_keywords:
+  "Architectural Drawing(s)":
+    - "architectural drawing"
+    - "blueprint"
+    - "floor plan"
+  "Artifact(s)":
+    - "artifact"
+    - "object"
+    - "memorabilia"
+  "Artwork":
+    - "artwork"
+    - "painting"
+    - "print"
+    - "drawing"
+    - "sketch"
+  "Audio and/or Visual Recording(s)":
+    - "audio"
+    - "video"
+    - "recording"
+    - "cassette"
+    - "reel-to-reel"
+  "Botanical Specimen(s)":
+    - "botanical"
+    - "plant"
+    - "herbarium"
+  "Film (negative, slide, or motion picture)":
+    - "film"
+    - "negative"
+    - "slide"
+    - "motion picture"
+    - "nitrate"
+    - "acetate"
+  "Glass Material(s)":
+    - "glass"
+    - "plate negative"
+    - "lantern slide"
+  "Photographic Material(s)":
+    - "photograph"
+    - "photo"
+    - "daguerreotype"
+    - "tintype"
+    - "carte de visite"
+  "Scrapbook(s)":
+    - "scrapbook"
+  "Technical Drawing(s) and Schematic(s)":
+    - "technical drawing"
+    - "schematic"
+    - "diagram"
+    - "engineering drawing"
+  "Textile(s)":
+    - "textile"
+    - "fabric"
+    - "quilt"
+    - "clothing"
+    - "garment"
+  "Vellum and Parchment":
+    - "vellum"
+    - "parchment"
+  "Volume(s)":
+    - "volume"
+    - "bound"
+    - "ledger"
+    - "journal"
+    - "diary"
+  "Oversize Material?":
+    - "oversize"
+    - "oversized"
+    - "flat file"
+
+# Keywords for detecting removable media (used in Digital Issues evaluation).
+removable_media_keywords:
+  - "floppy disk"
+  - "floppy"
+  - "3.5 inch disk"
+  - "5.25 inch disk"
+  - "diskette"
+  - "CD"
+  - "CD-ROM"
+  - "CD-R"
+  - "CD-RW"
+  - "DVD"
+  - "DVD-ROM"
+  - "DVD-R"
+  - "Blu-ray"
+  - "hard drive"
+  - "external hard drive"
+  - "flash drive"
+  - "USB"
+  - "thumb drive"
+  - "zip disk"
+  - "zip drive"
+  - "tape"
+  - "DAT"
+  - "LTO"
+  - "data tape"
+  - "magnetic tape"
+  - "memory card"
+  - "SD card"
+  - "CompactFlash"
+  - "MiniDisc"
+  - "Jaz disk"
+  - "SyQuest"
+
+# Named scan configurations for the configurable scanning framework.
+issue_scan_configs: {}
+
+# Dropdown options for Documentation and Use Issues.
+documentation_use_issues_options:
+  - "Material is actually or possibly on deposit."
+  - "Material may or does lack a gift agreement."
+  - "Other issues."
+
+# Dropdown options for Kind of Processing Project.
+processing_project_types:
+  - "Accessioning as Processing"
+  - "Backlog"
+  - "Requested"
+  - "Cataloging"
+  - "Unknown"
+
+# Processing status values that indicate an accession has been completed.
+completion_triggers: []

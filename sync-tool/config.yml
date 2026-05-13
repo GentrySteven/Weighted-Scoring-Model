@@ -1,0 +1,109 @@
+# =============================================================================
+# archivesspace-accession-sync Configuration
+# =============================================================================
+# This file contains non-sensitive settings organized in three tiers:
+#   Tier 1 (Essential) — Must be configured before the tool can run
+#   Tier 2 (Common)    — Most users will want to customize these
+#   Tier 3 (Advanced)  — Leave at defaults unless you have a specific need
+#
+# For credentials and API keys, see credentials.yml (not tracked in git).
+# For keyword lists and data mappings, see data.yml (managed by the wizard).
+# =============================================================================
+
+# =============================================================================
+# TIER 1 — ESSENTIAL
+# These settings must be configured before the tool can run.
+# The setup wizard will guide you through these.
+# =============================================================================
+
+archivesspace:
+  # Replace with your institution's ArchivesSpace API endpoint.
+  # Common patterns:
+  #   Hosted/cloud: https://your-instance.archivesspace.org/api
+  #   Self-hosted:  http://localhost:8089
+  base_url: ""
+  repository_id: 2
+
+output:
+  # "excel" or "google_sheets"
+  format: "excel"
+  spreadsheet_name: "Accession Data and Scores"
+
+excel:
+  # Full path to the directory for the Excel file.
+  # Windows: "C:\\Users\\YourName\\Documents\\accession-sync"
+  # macOS/Linux: "/home/yourname/documents/accession-sync"
+  target_directory: ""
+
+google_sheets:
+  folder_id: ""
+  spreadsheet_url: ""
+  sharing: []
+
+# =============================================================================
+# TIER 2 — COMMON
+# Most users will want to customize these. Sensible defaults provided.
+# =============================================================================
+
+agents:
+  donor_role: "source"
+
+scheduling:
+  frequency: "weekly"
+  time: "20:00"
+  buffer_minutes: 60
+
+notifications:
+  recipient_email: ""
+  format: "plain"
+  digest_mode: false
+
+logging:
+  level: "standard"
+  directory: ""
+  consolidation_frequency: "weekly"
+
+cache:
+  directory: ""
+
+preview:
+  directory: ""
+  review_timeout_hours: 72
+  retention: "until_next_run"
+
+scoring:
+  excel_scoring_mode: "linked_workbook"
+  scoring_workbook_path: ""
+
+# =============================================================================
+# TIER 3 — ADVANCED
+# Most users can leave these at their default values.
+# =============================================================================
+
+throttling:
+  archivesspace: 0.5
+  google_sheets: 1.0
+  google_drive: 0.5
+  batch_mode: true
+
+retry:
+  max_retries: 5
+  file_lock_retries: 5
+  file_lock_interval: 60
+
+matching:
+  fuzzy_enabled: false
+  fuzzy_threshold: 85
+
+subject_descriptors:
+  num_columns: 9
+
+logging_advanced:
+  grace_period_days: 3
+  retention: "indefinite"
+  archive_review_window_days: 30
+  storage_warning_threshold_mb: 1024
+
+ui:
+  show_confirmations: true
+  tour_completed: false
