@@ -144,7 +144,10 @@ pip install .[google]
 # Optional enhancements (can be combined, e.g., pip install .[excel,progress,matching]):
 pip install .[progress]   # Rich progress bars with time estimates (tqdm)
 pip install .[matching]   # Fuzzy keyword matching (RapidFuzz)
+pip install .[secure]     # Store passwords in OS credential manager (keyring)
 ```
+
+**Recommended:** Install the `secure` extra to store your ArchivesSpace and SMTP passwords in your operating system's credential manager (Windows Credential Manager, macOS Keychain, or Linux Secret Service) instead of in a plaintext file. Without it, passwords are stored in `credentials.yml`.
 
 See [Platform Installation Guide](docs/platform_installation.md) for OS-specific Python setup.
 
