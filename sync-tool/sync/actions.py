@@ -46,6 +46,12 @@ def _action_verify_config(config: ConfigManager) -> None:
     if not base_url:
         return
 
+    if base_url.startswith("http://"):
+        print("\n  ⚠ WARNING: Your API URL uses HTTP (not HTTPS).")
+        print("  Credentials and data are sent unencrypted.")
+        if not base_url.startswith("http://localhost") and not base_url.startswith("http://127.0.0.1"):
+            print("  Consider switching to HTTPS if your instance supports it.")
+
     print("\n  Checking ArchivesSpace connection...")
     try:
         from sync.archivesspace import ArchivesSpaceClient

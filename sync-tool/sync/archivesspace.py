@@ -72,6 +72,10 @@ class ArchivesSpaceClient:
         """
         Establish a connection to the ArchivesSpace API.
 
+        SSL certificate verification is enabled by default. It can be
+        disabled via config.yml (`archivesspace.verify_ssl: false`) for
+        instances using self-signed certificates, but a warning is logged.
+
         Returns:
             True if connection was successful, False otherwise.
         """
@@ -89,6 +93,27 @@ class ArchivesSpaceClient:
                 username=username,
                 password=password,
             )
+
+            # SSL certificate verification: enabled by default.
+            # Institutions using self-signed certificates can set
+            # archivesspace.verify_ssl to false in config.yml.
+            verify_ssl = self.config.get(
+                "archivesspace", "verify_ssl", default=True
+            )
+            if verify_ssl is False or str(verify_ssl).lower() == "false":
+                self._client.session.verify = False
+                self.logger.warning(
+                    "SSL certificate verification is DISABLED. "
+                    "Connections to ArchivesSpace will not validate "
+                    "the server's identity."
+                )
+                # Suppress the urllib3 InsecureRequestWarning that fires
+                # on every request when verify=False
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            else:
+                self._client.session.verify = True
+
             self._client.authorize()
             self.logger.summary("Connected to ArchivesSpace successfully.")
             self.logger.technical(f"Connected to {self.base_url}")

@@ -75,10 +75,7 @@ class NotificationManager:
             content_type = "html" if self.email_format == "html" else "plain"
             msg.attach(MIMEText(body, content_type))
 
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
+            with self._smtp_connection() as server:
                 server.login(self.smtp_username, self.smtp_password)
                 server.send_message(msg)
 
@@ -90,6 +87,36 @@ class NotificationManager:
             if retry_at_end:
                 self._pending_retry = (subject, body)
             return False
+
+    def _smtp_connection(self):
+        """
+        Create a TLS-secured SMTP connection.
+
+        Supports two modes based on the configured port:
+        - Port 465: Implicit TLS (SMTP_SSL) — the connection is encrypted
+          from the start.
+        - Port 587 (default) or other: STARTTLS — connects in plaintext,
+          then upgrades to TLS before sending credentials.
+
+        Raises an exception if TLS cannot be established, preventing
+        credentials from being sent over an unencrypted connection.
+        """
+        port = int(self.smtp_port)
+
+        if port == 465:
+            # Implicit TLS — entire connection is encrypted
+            return smtplib.SMTP_SSL(self.smtp_server, port)
+        else:
+            # STARTTLS — upgrade plaintext connection to TLS
+            server = smtplib.SMTP(self.smtp_server, port)
+            server.ehlo()
+            # starttls() raises an exception if the server doesn't
+            # support STARTTLS or if TLS negotiation fails. We do NOT
+            # catch this — if TLS fails, the connection must not proceed,
+            # because login credentials would be sent in plaintext.
+            server.starttls()
+            server.ehlo()
+            return server
 
     def notify_sync_success(self, summary: str, had_changes: bool = True) -> bool:
         """
