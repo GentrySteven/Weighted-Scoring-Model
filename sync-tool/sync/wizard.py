@@ -408,6 +408,7 @@ class SetupWizard:
             ("yaml", "pyyaml", True),
             ("openpyxl", "openpyxl (Excel support)", False),
             ("asnake", "ArchivesSnake (ArchivesSpace API)", False),
+            ("keyring", "keyring (secure credential storage)", False),
         ]
 
         print("\n  Checking dependencies:")
@@ -421,6 +422,35 @@ class SetupWizard:
                     return False
                 else:
                     print(f"    {display_name}: not installed (optional)")
+
+        # Check keyring availability for secure credential storage
+        try:
+            import keyring as kr
+            backend = kr.get_keyring()
+            backend_name = type(backend).__name__
+            if "Fail" not in backend_name and "null" not in backend_name.lower():
+                print(f"    keyring (secure credential storage): active")
+                print(f"      Backend: {backend_name}")
+                print(f"      Passwords will be stored in your OS credential manager")
+                print(f"      instead of plaintext in credentials.yml.")
+            else:
+                print(f"    keyring: installed but no working backend")
+                print(f"      Passwords will be stored in credentials.yml.")
+        except ImportError:
+            print(f"    keyring (secure credential storage): not installed (optional)")
+            print(f"      Install with: pip install keyring")
+            print(f"      Passwords will be stored in credentials.yml.")
+
+        # Report keyring status specifically since it affects credential security
+        if self.config._keyring_available():
+            print("\n  Credential storage: OS credential manager (secure)")
+            print("  Passwords will be stored in Windows Credential Manager")
+            print("  (or macOS Keychain / Linux Secret Service) rather than")
+            print("  in the plaintext credentials.yml file.")
+        else:
+            print("\n  Credential storage: credentials.yml (plaintext file)")
+            print("  For enhanced security, install keyring:")
+            print("    pip install archivesspace-accession-sync[secure]")
 
         self.progress.complete_step(1, 2)
         print("\n  Prerequisites check passed.")
@@ -507,12 +537,28 @@ class SetupWizard:
         print("    Self-hosted: http://localhost:8089")
 
         url = Menu.prompt_text("ArchivesSpace API URL:", default=current_url)
+        if url.startswith("http://"):
+            print()
+            print("  ⚠ WARNING: This URL uses HTTP (not HTTPS).")
+            print("  Your username, password, and all accession data will be")
+            print("  sent unencrypted over the network. This is acceptable for")
+            print("  local development (localhost) but is a security risk for")
+            print("  remote connections.")
+            if not url.startswith("http://localhost") and not url.startswith("http://127.0.0.1"):
+                print()
+                print("  This does not appear to be a localhost connection.")
+                print("  If your ArchivesSpace instance supports HTTPS, use")
+                print("  that URL instead (e.g., https://your-instance.archivesspace.org/api).")
+                if not Menu.prompt_yes_no("Continue with HTTP anyway?"):
+                    return False
         self.config.set("archivesspace", "base_url", value=url)
         self.progress.complete_step(3, 1)
 
         current_user = self.config.get_credential("archivesspace", "username") or ""
         username = Menu.prompt_text("ArchivesSpace username:", default=current_user)
-        password = Menu.prompt_text("ArchivesSpace password:")
+        if self.config._keyring_available():
+            print("  (Password will be stored securely in your OS credential manager)")
+        password = Menu.prompt_password("ArchivesSpace password:")
 
         self.config.save_credentials({
             "archivesspace": {"username": username, "password": password},
@@ -699,7 +745,9 @@ class SetupWizard:
                 "OAuth Client ID:",
                 default=self.config.get_credential("google", "oauth_client_id") or "",
             )
-            client_secret = Menu.prompt_text("OAuth Client Secret:")
+            if self.config._keyring_available():
+                print("  (Secret will be stored securely in your OS credential manager)")
+            client_secret = Menu.prompt_password("OAuth Client Secret:")
             token_path = Menu.prompt_text(
                 "Token storage path:",
                 default=str(self.config.project_root / "token.json"),
@@ -1380,7 +1428,9 @@ class SetupWizard:
         )
         port = Menu.prompt_text("SMTP port:", default="587")
         username = Menu.prompt_text("SMTP username (your email):")
-        password = Menu.prompt_text("SMTP password:")
+        if self.config._keyring_available():
+            print("  (Password will be stored securely in your OS credential manager)")
+        password = Menu.prompt_password("SMTP password:")
 
         creds = dict(self.config._credentials)
         creds["smtp"] = {
