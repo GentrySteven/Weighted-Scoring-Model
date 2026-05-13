@@ -472,11 +472,68 @@ class ConfigManager:
         return default
 
     def get_credential(self, *keys: str, default: Any = None) -> Any:
-        """Get a credential value from credentials.yml."""
+        """
+        Get a credential value, checking the OS credential store first.
+
+        If `keyring` is installed, password-type fields are retrieved from
+        the OS credential store (Windows Credential Manager, macOS Keychain,
+        etc.) before falling back to credentials.yml. This means passwords
+        don't need to exist in the plaintext YAML file at all.
+
+        Non-password fields (like auth_method, username, server) always
+        come from credentials.yml.
+        """
         if not self._loaded:
             self.load()
+
+        # Try keyring first for password-type fields
+        keyring_key = self._keyring_key(keys)
+        if keyring_key and self._keyring_available():
+            try:
+                import keyring as kr
+                value = kr.get_password(self.KEYRING_SERVICE, keyring_key)
+                if value is not None:
+                    return value
+            except Exception:
+                pass  # Fall through to credentials.yml
+
         result = self._traverse(self._credentials, keys)
+        # Don't return the placeholder string as an actual credential
+        if result == self.KEYRING_PLACEHOLDER:
+            return default
         return result if result is not None else default
+
+    # Keyring constants and helpers
+    KEYRING_SERVICE = "archivesspace-accession-sync"
+    KEYRING_PLACEHOLDER = "(stored in OS credential manager)"
+
+    # Maps credentials.yml key paths to keyring key names.
+    # Only password/secret fields are stored in keyring — usernames,
+    # server addresses, and auth methods stay in credentials.yml.
+    _KEYRING_KEYS = {
+        ("archivesspace", "password"): "archivesspace_password",
+        ("smtp", "password"): "smtp_password",
+        ("google", "oauth_client_secret"): "google_oauth_client_secret",
+    }
+
+    def _keyring_key(self, keys: tuple) -> Optional[str]:
+        """Return the keyring key name for a credentials.yml path, or None."""
+        return self._KEYRING_KEYS.get(keys)
+
+    def _keyring_available(self) -> bool:
+        """Check if keyring is installed and has a working backend."""
+        try:
+            import keyring as kr
+            # Some systems have keyring installed but no backend configured.
+            # get_keyring() returns the active backend; if it's the fail
+            # backend, keyring won't actually store anything.
+            backend = kr.get_keyring()
+            backend_name = type(backend).__name__
+            if "Fail" in backend_name or "null" in backend_name.lower():
+                return False
+            return True
+        except Exception:
+            return False
 
     def get_data(self, *keys: str, default: Any = None) -> Any:
         """Get a value specifically from data.yml."""
@@ -548,11 +605,47 @@ class ConfigManager:
             yaml.dump(self._data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
     def save_credentials(self, credentials: dict) -> None:
-        """Save credentials to credentials.yml."""
+        """
+        Save credentials, using the OS credential store for passwords.
+
+        When `keyring` is available, password-type fields are stored in
+        the OS credential store and replaced with a placeholder in the
+        YAML file. This means the plaintext file never contains actual
+        passwords. When keyring is not available, passwords are stored
+        in credentials.yml as before (the file is excluded from git
+        via .gitignore).
+        """
+        use_keyring = self._keyring_available()
+
+        if use_keyring:
+            import keyring as kr
+            # Store each password-type field in keyring and replace with placeholder
+            for key_path, keyring_key in self._KEYRING_KEYS.items():
+                value = self._traverse(credentials, key_path)
+                if value and value != self.KEYRING_PLACEHOLDER:
+                    try:
+                        kr.set_password(self.KEYRING_SERVICE, keyring_key, value)
+                        # Replace the password in the dict with a placeholder
+                        # so the YAML file doesn't contain the actual password
+                        self._set_nested(credentials, key_path, self.KEYRING_PLACEHOLDER)
+                    except Exception:
+                        pass  # If keyring fails, leave the password in the YAML
+
         self.credentials_path.parent.mkdir(parents=True, exist_ok=True)
         with open(self.credentials_path, "w", encoding="utf-8") as f:
             yaml.dump(credentials, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
         self._credentials = credentials
+
+    @staticmethod
+    def _set_nested(d: dict, keys: tuple, value: Any) -> None:
+        """Set a value in a nested dict using a tuple of keys."""
+        current = d
+        for key in keys[:-1]:
+            if key not in current or not isinstance(current[key], dict):
+                return  # Path doesn't exist; nothing to replace
+            current = current[key]
+        if keys[-1] in current:
+            current[keys[-1]] = value
 
     # -------------------------------------------------------------------------
     # Validation
