@@ -823,22 +823,46 @@ class SetupWizard:
 
         # Sharing permissions
         print("\n  Configure sharing permissions for the spreadsheet.")
+        print()
+        print("  When the service account creates a spreadsheet, it owns the file.")
+        print("  You need to add your own email address as a 'Writer' so you can")
+        print("  view and edit the spreadsheet in your Google Drive.")
+        print()
+        print("  If your Google Drive folder already shares access with you")
+        print("  (because you own the folder), this may happen automatically.")
+        print("  Adding an explicit permission here guarantees access regardless")
+        print("  of your organization's folder-sharing settings.")
+
         sharing: list[dict] = self.config.get("google_sheets", "sharing", default=[]) or []
 
+        if sharing:
+            print("\n  Current sharing permissions:")
+            for s in sharing:
+                print(f"    {s['email']} ({s['role']})")
+            if not Menu.prompt_yes_no("Keep these and continue?"):
+                sharing = []
+
+        if not sharing:
+            # First permission — default to writer
+            print()
+            email = Menu.prompt_text("Your email address (for spreadsheet access):")
+            if email:
+                notify = Menu.prompt_yes_no("Send notification email when spreadsheet is created?")
+                sharing.append({"email": email, "role": "writer", "notify": notify})
+                print(f"  Added: {email} (writer)")
+
+        # Additional permissions
         while True:
-            if sharing:
-                print("  Current sharing:")
-                for s in sharing:
-                    print(f"    {s['email']} ({s['role']})")
-
-            if not Menu.prompt_yes_no("Add a sharing permission?", default=not sharing):
+            if not Menu.prompt_yes_no(
+                "Would you like to add another sharing permission?", default=False
+            ):
                 break
-
             email = Menu.prompt_text("Email address:")
             role_idx = Menu.prompt_choice("Role:", ["Reader", "Commenter", "Writer"])
             role = ["reader", "commenter", "writer"][role_idx]
             notify = Menu.prompt_yes_no("Send notification email?")
             sharing.append({"email": email, "role": role, "notify": notify})
+            print(f"  Added: {email} ({role})")
 
         self.config.set("google_sheets", "sharing", value=sharing)
         self.progress.complete_step(4, 3)
