@@ -1059,40 +1059,137 @@ class SetupWizard:
     def _phase_format_keywords(self, rerun: bool = False) -> bool:
         """Phase 7: Format keyword configuration."""
         print("\n  The tool detects material formats by scanning accession fields for keywords.")
-        print("  Default keyword lists are provided for 14 format types.")
+        print("  Each format type has a list of keywords — if any keyword appears in an")
+        print("  accession's description, that format is flagged as present.")
 
         current = self.config.get_data("format_keywords", default={})
 
         if current:
-            print(f"\n  Currently configured formats: {len(current)}")
+            print(f"\n  The program includes default keyword lists for {len(current)} format types.")
+            print("  These were created by the program developers, not by you.")
+            print("  You can accept them as-is, customize them, or replace them entirely.\n")
             for name, keywords in current.items():
-                print(f"    {name}: {len(keywords)} keyword(s)")
+                kw_display = ", ".join(keywords[:8])
+                if len(keywords) > 8:
+                    kw_display += f", ... (+{len(keywords) - 8} more)"
+                print(f"    {name} ({len(keywords)} keywords):")
+                print(f"      {kw_display}")
 
-        if Menu.prompt_yes_no("Accept the current/default keyword lists?"):
-            return True
+        accept_defaults = Menu.prompt_yes_no(
+            "\nAccept these default keyword lists as a starting point?",
+        )
+        if not accept_defaults:
+            print("  Defaults cleared. You can build custom lists through the")
+            print("  interactive menu (Option 6: Scan for format keywords).")
+            self.config.set_data("format_keywords", value={})
 
-        # Offer repository scanning
+        # Offer repository scanning regardless of whether defaults were accepted.
+        # Scanning helps the user discover additional terms specific to their
+        # repository that the defaults may not cover.
+        print()
+        print("  You can also scan your ArchivesSpace repository for terms that")
+        print("  appear in accession descriptions. This helps identify format-related")
+        print("  words specific to your collection that may not be in the defaults.")
+
         if Menu.prompt_yes_no("Scan your repository for additional terms?", default=False):
-            try:
-                from sync.archivesspace import ArchivesSpaceClient
-                if not self._logger:
-                    self._logger = LoggingManager(self.config)
-                client = ArchivesSpaceClient(self.config, self._logger)
-                if client.connect():
-                    print("  Scanning content_description, condition_description, inventory...")
-                    terms = client.scan_fields_for_terms(
-                        ["content_description", "condition_description", "inventory"]
-                    )
-                    top_terms = list(terms.items())[:50]
-                    print(f"  Found {len(terms)} unique terms. Top 50:")
-                    for term, count in top_terms:
-                        print(f"    {term}: {count} occurrence(s)")
-                    print("\n  Review these terms and add relevant ones to your keyword lists")
-                    print("  through the interactive menu later.")
-            except Exception as e:
-                print(f"  Scan error: {e}")
+            self._scan_repository_for_terms()
 
         return True
+
+    # Stop words filtered from repository scans — common English words
+    # that appear frequently but carry no archival meaning. This list
+    # covers articles, conjunctions, prepositions, pronouns, and other
+    # high-frequency function words.
+    _STOP_WORDS = frozenset({
+        # Articles
+        "a", "an", "the",
+        # Conjunctions
+        "and", "but", "or", "nor", "for", "yet", "so", "both", "either",
+        "neither", "not", "only",
+        # Prepositions
+        "at", "by", "for", "from", "in", "into", "of", "on", "to", "with",
+        "about", "above", "across", "after", "against", "along", "among",
+        "around", "as", "before", "behind", "below", "beneath", "beside",
+        "between", "beyond", "during", "except", "inside", "near", "off",
+        "onto", "out", "outside", "over", "past", "since", "through",
+        "throughout", "toward", "under", "until", "up", "upon", "within",
+        "without",
+        # Pronouns
+        "i", "me", "my", "mine", "myself", "we", "us", "our", "ours",
+        "ourselves", "you", "your", "yours", "yourself", "yourselves",
+        "he", "him", "his", "himself", "she", "her", "hers", "herself",
+        "it", "its", "itself", "they", "them", "their", "theirs",
+        "themselves", "this", "that", "these", "those", "who", "whom",
+        "whose", "which", "what",
+        # Common verbs and auxiliaries
+        "is", "am", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "having", "do", "does", "did", "doing",
+        "will", "would", "shall", "should", "may", "might", "must",
+        "can", "could",
+        # Other high-frequency words
+        "no", "yes", "all", "any", "each", "every", "few", "more",
+        "most", "other", "some", "such", "than", "too", "very",
+        "also", "just", "then", "now", "here", "there", "when",
+        "where", "how", "if", "because", "while", "although",
+        "though", "whether", "etc", "ie", "eg",
+        # Single characters and numbers
+        "s", "t", "d", "ll", "re", "ve", "m",
+    })
+
+    def _scan_repository_for_terms(self) -> None:
+        """Scan ArchivesSpace for terms and save results to a text file."""
+        try:
+            from sync.archivesspace import ArchivesSpaceClient
+            if not self._logger:
+                self._logger = LoggingManager(self.config)
+            client = ArchivesSpaceClient(self.config, self._logger)
+            if not client.connect():
+                print("  Could not connect to ArchivesSpace.")
+                return
+
+            print("  Scanning content_description, condition_description, inventory...")
+            terms = client.scan_fields_for_terms(
+                ["content_description", "condition_description", "inventory"]
+            )
+
+            # Filter out stop words and very short terms
+            filtered = {
+                term: count for term, count in terms.items()
+                if term.lower() not in self._STOP_WORDS
+                and len(term) > 2
+                and not term.isdigit()
+            }
+
+            # Sort by frequency descending
+            sorted_terms = sorted(filtered.items(), key=lambda kv: -kv[1])
+            top_terms = sorted_terms[:100]
+
+            print(f"  Found {len(filtered)} unique terms (after filtering common words).")
+            print(f"  Top {len(top_terms)} shown below:\n")
+            for term, count in top_terms[:20]:
+                print(f"    {term}: {count} occurrence(s)")
+            if len(top_terms) > 20:
+                print(f"    ... and {len(top_terms) - 20} more (see text file)")
+
+            # Save to a text file so results persist after the terminal closes
+            output_path = self.config.project_root / "scan_results_formats.txt"
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write("Format Keyword Scan Results\n")
+                f.write(f"{'=' * 50}\n")
+                f.write(f"Repository: {self.config.get_base_url()}\n")
+                f.write(f"Total unique terms (after filtering): {len(filtered)}\n")
+                f.write(f"Common words (articles, pronouns, etc.) were excluded.\n\n")
+                f.write(f"{'Term':<40} {'Occurrences':>12}\n")
+                f.write(f"{'-' * 40} {'-' * 12}\n")
+                for term, count in sorted_terms:
+                    f.write(f"{term:<40} {count:>12}\n")
+
+            print(f"\n  Full results saved to: {output_path}")
+            print("  Review this file and add relevant terms to your keyword lists")
+            print("  through the interactive menu (Option 6: Scan for format keywords).")
+
+        except Exception as e:
+            print(f"  Scan error: {e}")
 
     def _phase_subject_descriptors(self, rerun: bool = False) -> bool:
         """Phase 8: Subject descriptor configuration."""
