@@ -779,11 +779,46 @@ class SetupWizard:
         print("  under 'client_email') and give it 'Editor' access.")
         print()
 
-        folder_id = Menu.prompt_text(
-            "Google Drive folder ID:",
-            default=self.config.get("google_sheets", "folder_id") or "",
-        )
-        self.config.set("google_sheets", "folder_id", value=folder_id)
+        while True:
+            folder_id = Menu.prompt_text(
+                "Google Drive folder ID:",
+                default=self.config.get("google_sheets", "folder_id") or "",
+            )
+
+            if not folder_id:
+                print("  No folder ID provided.")
+                if Menu.prompt_yes_no("Skip this step? (You can set it later)"):
+                    break
+                continue
+
+            # Verify the folder by fetching its name from the Drive API
+            print("  Verifying folder...")
+            folder_name = self._verify_drive_folder(folder_id)
+
+            if folder_name:
+                print(f"\n  Folder found: \"{folder_name}\"")
+                if Menu.prompt_yes_no("Is this the correct folder?"):
+                    self.config.set("google_sheets", "folder_id", value=folder_id)
+                    break
+                else:
+                    print("  Please re-enter the folder ID.")
+                    continue
+            else:
+                print("  ⚠ Could not verify the folder.")
+                print("  This may mean the folder ID is incorrect, the folder")
+                print("  hasn't been shared with the service account, or there")
+                print("  is a network issue.")
+                choice = Menu.prompt_choice(
+                    "What would you like to do?",
+                    [
+                        "Re-enter the folder ID",
+                        "Use this ID anyway (verify later)",
+                    ],
+                )
+                if choice == 1:
+                    self.config.set("google_sheets", "folder_id", value=folder_id)
+                    break
+
         self.progress.complete_step(4, 2)
 
         # Sharing permissions
@@ -828,6 +863,58 @@ class SetupWizard:
             if Menu.prompt_yes_no("Continue anyway? (You can fix this later)"):
                 return True
             return False
+
+    def _verify_drive_folder(self, folder_id: str) -> Optional[str]:
+        """
+        Verify a Google Drive folder ID by fetching its name.
+
+        Uses the credentials saved during the earlier part of Phase 4
+        (service account key or OAuth) to authenticate with the Drive API
+        and retrieve the folder's metadata.
+
+        Returns the folder name if successful, None if the folder can't
+        be found or the API call fails.
+        """
+        try:
+            auth_method = self.config.get_credential(
+                "google", "auth_method", default="service_account"
+            )
+
+            if auth_method == "service_account":
+                from google.oauth2 import service_account
+                key_path = self.config.get_credential(
+                    "google", "service_account_key_path", default=""
+                )
+                if not key_path or not Path(key_path).exists():
+                    return None
+                scopes = ["https://www.googleapis.com/auth/drive.metadata.readonly"]
+                credentials = service_account.Credentials.from_service_account_file(
+                    key_path, scopes=scopes,
+                )
+            else:
+                # OAuth — try to use existing token
+                from google.oauth2.credentials import Credentials
+                token_path = self.config.get_credential(
+                    "google", "oauth_token_path", default=""
+                )
+                if not token_path or not Path(token_path).exists():
+                    return None
+                credentials = Credentials.from_authorized_user_file(token_path)
+
+            from googleapiclient.discovery import build as google_build
+            drive_service = google_build("drive", "v3", credentials=credentials)
+            result = drive_service.files().get(
+                fileId=folder_id,
+                fields="name",
+                supportsAllDrives=True,
+            ).execute()
+            return result.get("name")
+
+        except Exception as e:
+            # Log the error but don't crash — the caller handles the None return
+            if self._logger:
+                self._logger.technical(f"Drive folder verification failed: {e}")
+            return None
 
     def _phase_excel(self, rerun: bool = False) -> bool:
         """Phase 5: Excel file location."""
