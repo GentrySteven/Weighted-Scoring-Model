@@ -285,39 +285,10 @@ class NotificationManager:
             self.send(subject, body)
             self._pending_retry = None
 
-    def send_test_email(self) -> tuple[bool, str]:
-        """
-        Send a test email to verify SMTP configuration.
-
-        Returns:
-            A tuple of (success, error_message). On success, error_message
-            is empty. On failure, it contains the actual exception text.
-        """
-        subject = "Test notification"
-        body = (
+    def send_test_email(self) -> bool:
+        """Send a test email to verify SMTP configuration."""
+        return self.send(
+            "Test notification",
             "This is a test email from archivesspace-accession-sync.\n"
-            "If you receive this message, email notifications are configured correctly."
+            "If you receive this message, email notifications are configured correctly.",
         )
-
-        if not self._enabled:
-            return False, "Email notifications are not configured (missing SMTP server or recipient)."
-
-        try:
-            msg = MIMEMultipart()
-            msg["From"] = self.smtp_username
-            msg["To"] = self.recipient
-            msg["Subject"] = f"[archivesspace-accession-sync] {subject}"
-
-            content_type = "html" if self.email_format == "html" else "plain"
-            msg.attach(MIMEText(body, content_type))
-
-            with self._smtp_connection() as server:
-                server.login(self.smtp_username, self.smtp_password)
-                server.send_message(msg)
-
-            self.logger.technical(f"Email notification sent: {subject}")
-            return True, ""
-
-        except Exception as e:
-            self.logger.warning(f"Failed to send email notification: {e}")
-            return False, str(e)

@@ -372,7 +372,7 @@ class Menu:
         # method's own ": " suffix doesn't produce a double colon.
         q = question.rstrip().rstrip(":")
         if default:
-            answer = input(f"  {q} [default is {default}]: ").strip()
+            answer = input(f"  {q}: [{default}]: ").strip()
             return answer if answer else default
         return input(f"  {q}: ").strip()
 
