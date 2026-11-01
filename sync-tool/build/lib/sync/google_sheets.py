@@ -151,30 +151,75 @@ class GoogleSheetsManager:
             return False
 
     def create_spreadsheet(self, headers: list[str]) -> str:
-        """Create a new Google Sheet with headers and formatting."""
+        """
+        Create a new Google Sheet with headers and formatting.
+
+        Uses the Drive API (files.create) to create the spreadsheet file,
+        then the Sheets API to populate it. This avoids a known restriction
+        where service accounts are blocked from calling
+        spreadsheets().create() directly.
+        """
         from sync.scoring_criteria import build_values_array, SHEET_NAME as SCORING_SHEET
 
         name = self.config.get_spreadsheet_name()
+        folder_id = self.config.get("google_sheets", "folder_id", default="")
 
-        # Build sheet definitions — main sheet plus scoring criteria sheet
-        # if dimensions are configured in data.yml
-        sheet_definitions = [{"properties": {"title": "Accession Data and Scores"}}]
+        # Step 1: Create the spreadsheet file via the Drive API.
+        # The Sheets API's spreadsheets().create() returns 403 for many
+        # service accounts. The Drive API's files().create() with the
+        # Google Sheets MIME type works reliably as an alternative.
+        file_metadata = {
+            "name": name,
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+        }
+        if folder_id:
+            file_metadata["parents"] = [folder_id]
+
+        time.sleep(self.throttle_drive)
+        drive_result = self._drive_service.files().create(
+            body=file_metadata,
+            fields="id",
+            supportsAllDrives=True,
+        ).execute()
+        self._spreadsheet_id = drive_result["id"]
+        url = f"https://docs.google.com/spreadsheets/d/{self._spreadsheet_id}"
+
+        # Step 2: Rename the default sheet tab to "Accession Data and Scores".
+        # The Drive API creates a single sheet named "Sheet1"; we rename it
+        # and optionally add the scoring criteria sheet.
+        time.sleep(self.throttle_sheets)
+        metadata = self._sheets_service.spreadsheets().get(
+            spreadsheetId=self._spreadsheet_id
+        ).execute()
+        default_sheet_id = metadata["sheets"][0]["properties"]["sheetId"]
+
+        batch_requests = [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": default_sheet_id,
+                        "title": "Accession Data and Scores",
+                    },
+                    "fields": "title",
+                }
+            }
+        ]
 
         criteria = self.config.get_data("scoring_criteria", default={})
         dimensions = criteria.get("dimensions", {})
         if dimensions:
-            sheet_definitions.append({"properties": {"title": SCORING_SHEET}})
+            batch_requests.append({
+                "addSheet": {
+                    "properties": {"title": SCORING_SHEET}
+                }
+            })
 
-        body = {
-            "properties": {"title": name},
-            "sheets": sheet_definitions,
-        }
-        time.sleep(self.throttle_sheets)
-        result = self._sheets_service.spreadsheets().create(body=body).execute()
-        self._spreadsheet_id = result["spreadsheetId"]
-        url = f"https://docs.google.com/spreadsheets/d/{self._spreadsheet_id}"
+        self._sheets_service.spreadsheets().batchUpdate(
+            spreadsheetId=self._spreadsheet_id,
+            body={"requests": batch_requests},
+        ).execute()
 
-        # Write headers to main sheet
+        # Step 3: Write headers to the main sheet.
         time.sleep(self.throttle_sheets)
         self._sheets_service.spreadsheets().values().update(
             spreadsheetId=self._spreadsheet_id,
@@ -183,7 +228,7 @@ class GoogleSheetsManager:
             body={"values": [headers]},
         ).execute()
 
-        # Populate scoring criteria sheet if configured
+        # Step 4: Populate scoring criteria sheet if configured.
         if dimensions:
             values, _ = build_values_array(dimensions)
             if values:
@@ -191,17 +236,15 @@ class GoogleSheetsManager:
                 self._sheets_service.spreadsheets().values().update(
                     spreadsheetId=self._spreadsheet_id,
                     range=f"'{SCORING_SHEET}'!A1",
-                    valueInputOption="USER_ENTERED",  # Allows formula evaluation
+                    valueInputOption="USER_ENTERED",
                     body={"values": values},
                 ).execute()
                 self.logger.technical(
                     f"Populated scoring criteria sheet with {len(dimensions)} dimensions."
                 )
 
-        # Move to folder, format headers, apply sharing, create vocab sheets
-        folder_id = self.config.get("google_sheets", "folder_id", default="")
-        if folder_id:
-            self._move_to_folder(self._spreadsheet_id, folder_id)
+        # Step 5: Apply sharing permissions (folder placement already
+        # handled by the parents field in Step 1).
         self._apply_sharing_permissions()
 
         self.config.set("google_sheets", "spreadsheet_url", value=url)
