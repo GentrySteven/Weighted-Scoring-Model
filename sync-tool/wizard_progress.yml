@@ -1,0 +1,25 @@
+extent_types_scan:
+- cubic_feet
+- linear_feet
+last_completed_phase: 15
+phase_10_complete: true
+phase_11_complete: true
+phase_12_complete: true
+phase_13_complete: true
+phase_14_complete: true
+phase_15_complete: true
+phase_1_complete: true
+phase_1_step: 2
+phase_2_complete: true
+phase_2_step: 1
+phase_3_complete: true
+phase_3_step: 3
+phase_4_complete: true
+phase_4_step: 3
+phase_5_complete: true
+phase_6_complete: true
+phase_6_step: 2
+phase_7_complete: true
+phase_8_complete: true
+phase_8_step: 1
+phase_9_complete: true
