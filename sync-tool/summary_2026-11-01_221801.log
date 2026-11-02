@@ -1,0 +1,9 @@
+=== Run: November 01, 2026 10:18 PM ===
+[SUMMARY] [2026-11-01 22:18] Sync run started at November 01, 2026 10:18 PM
+[SUMMARY] [2026-11-01 22:18] Connected to ArchivesSpace successfully.
+[SUMMARY] [2026-11-01 22:18] Authenticated with Google APIs (service account).
+[SUMMARY] [2026-11-01 22:18] Spreadsheet validation passed.
+[SUMMARY] [2026-11-01 22:18] Found 5 accessions in repository.
+[SUMMARY] [2026-11-01 22:18] Change detection complete: 5 new, 0 updated, 0 deleted, 0 unchanged.
+[SUMMARY] [2026-11-01 22:18] ERROR: Unknown extent type 'cubic_feet' encountered on accession 1. Please categorize this extent type in the setup wizard or config.
+[SUMMARY] [2026-11-01 22:18] Sync run completed with errors

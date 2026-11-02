@@ -1,0 +1,211 @@
+# =============================================================================
+# archivesspace-accession-sync Data File
+# =============================================================================
+# This file is managed by the setup wizard and interactive menu.
+# Direct edits are possible for advanced users, but take care to
+# preserve proper YAML formatting to avoid syntax errors.
+# =============================================================================
+
+scoring_criteria:
+  excel_scoring_mode: linked_workbook
+  scoring_workbook_path: ''
+  dimensions:
+    time_in_backlog:
+      label: Time in Backlog
+      category: quantitative
+      weight: 0.5
+      source_field: accession_date
+      scoring_type: date_range
+      thresholds:
+      - label: Less than 3 Years
+        score: 1
+        min_years: 0
+        max_years: 3
+      - label: 3 - 5 Years
+        score: 2
+        min_years: 3
+        max_years: 5
+      - label: 6 - 8 Years
+        score: 3
+        min_years: 5
+        max_years: 8
+      - label: 9 or More Years
+        score: 4
+        min_years: 8
+        max_years: null
+    priority:
+      label: Priority
+      category: quantitative
+      weight: 0.2
+      source_field: processing_priority
+      scoring_type: value_map
+      mappings:
+      - value: Not specified
+        score: 1
+      - value: Low
+        score: 2
+      - value: Medium
+        score: 3
+      - value: High
+        score: 4
+    subject_descriptors:
+      label: Subject Descriptors
+      category: strategic
+      weight: 0.3
+      source_field: subject_descriptor_count
+      scoring_type: count_range
+      thresholds:
+      - label: '1'
+        score: 1
+        min_count: 1
+        max_count: 1
+      - label: '2'
+        score: 2
+        min_count: 2
+        max_count: 2
+      - label: '3'
+        score: 3
+        min_count: 3
+        max_count: 3
+      - label: 4+
+        score: 4
+        min_count: 4
+        max_count: null
+extent_types: {}
+format_keywords:
+  Architectural Drawing(s):
+  - architectural drawing
+  - blueprint
+  - floor plan
+  Artifact(s):
+  - artifact
+  - object
+  - memorabilia
+  Artwork:
+  - artwork
+  - painting
+  - print
+  - drawing
+  - sketch
+  Audio and/or Visual Recording(s):
+  - audio
+  - video
+  - recording
+  - cassette
+  - reel-to-reel
+  Botanical Specimen(s):
+  - botanical
+  - plant
+  - herbarium
+  Film (negative, slide, or motion picture):
+  - film
+  - negative
+  - slide
+  - motion picture
+  - nitrate
+  - acetate
+  Glass Material(s):
+  - glass
+  - plate negative
+  - lantern slide
+  Photographic Material(s):
+  - photograph
+  - photo
+  - daguerreotype
+  - tintype
+  - carte de visite
+  Scrapbook(s):
+  - scrapbook
+  Technical Drawing(s) and Schematic(s):
+  - technical drawing
+  - schematic
+  - diagram
+  - engineering drawing
+  Textile(s):
+  - textile
+  - fabric
+  - quilt
+  - clothing
+  - garment
+  Vellum and Parchment:
+  - vellum
+  - parchment
+  Volume(s):
+  - volume
+  - bound
+  - ledger
+  - journal
+  - diary
+  Oversize Material?:
+  - oversize
+  - oversized
+  - flat file
+removable_media_keywords:
+- floppy disk
+- floppy
+- 3.5 inch disk
+- 5.25 inch disk
+- diskette
+- CD
+- CD-ROM
+- CD-R
+- CD-RW
+- DVD
+- DVD-ROM
+- DVD-R
+- Blu-ray
+- hard drive
+- external hard drive
+- flash drive
+- USB
+- thumb drive
+- zip disk
+- zip drive
+- tape
+- DAT
+- LTO
+- data tape
+- magnetic tape
+- memory card
+- SD card
+- CompactFlash
+- MiniDisc
+- Jaz disk
+- SyQuest
+issue_scan_configs: {}
+documentation_use_issues_options:
+- Material is actually or possibly on deposit.
+- Material may or does lack a gift agreement.
+- Other issues.
+processing_project_types:
+- Accessioning as Processing
+- Backlog
+- Requested
+- Cataloging
+- Unknown
+completion_triggers: []
+processing_queue:
+  queues:
+  - name: General Backlog
+    status_values:
+    - Backlog - General
+    grouping_field: Donor Name
+    view_mode: indented
+backlog_at_a_glance:
+  status_groups:
+  - label: General Backlog
+    status_values:
+    - Backlog - General
+    show_project_count: true
+  - label: Cataloging (Not Part of the Backlog)
+    status_values:
+    - Cataloging
+    show_project_count: false
+  - label: Requested
+    status_values:
+    - Backlog - Requested
+    show_project_count: false
+  - label: In-Progress
+    status_values:
+    - In-Progress
+    show_project_count: false

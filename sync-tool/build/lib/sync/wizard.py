@@ -692,26 +692,15 @@ class SetupWizard:
             print()
             print("  Then move the downloaded .json file into that folder.")
             print("  Enter the full path to the file below.")
-            print("  You can paste the path with or without quotation marks.")
             print()
 
             key_path = Menu.prompt_text(
                 "Path to service account JSON key file:",
                 default=self.config.get_credential("google", "service_account_key_path") or "",
             )
-            key_path = self._clean_file_path(key_path)
             while not Path(key_path).exists():
                 print(f"  ⚠ File not found: {key_path}")
-                print(f"    (received {len(key_path)} characters)")
-                # Show any non-printable characters for debugging
-                non_printable = [
-                    (i, hex(ord(c))) for i, c in enumerate(key_path)
-                    if not c.isprintable() or ord(c) > 127
-                ]
-                if non_printable:
-                    print(f"    Unexpected characters at positions: {non_printable}")
                 print("  Check that the path is correct and the file exists.")
-                print("  Tip: You can paste the path with or without quotation marks.")
                 choice_retry = Menu.prompt_choice(
                     "What would you like to do?",
                     [
@@ -725,7 +714,6 @@ class SetupWizard:
                     "Path to service account JSON key file:",
                     default=key_path,
                 )
-                key_path = self._clean_file_path(key_path)
 
             creds = dict(self.config._credentials)
             creds["google"] = {"auth_method": "service_account", "service_account_key_path": key_path}
@@ -879,100 +867,21 @@ class SetupWizard:
         self.config.set("google_sheets", "sharing", value=sharing)
         self.progress.complete_step(4, 3)
 
-        # Test Google connection — authenticate and make real API calls
-        # to verify that both the Sheets API and Drive API are enabled
-        # in the user's Google Cloud project.
+        # Test Google connection
         print("\n  Testing Google API connection...")
         try:
             from sync.google_sheets import GoogleSheetsManager
             if not self._logger:
                 self._logger = LoggingManager(self.config)
             gs = GoogleSheetsManager(self.config, self._logger)
-            if not gs.authenticate():
-                print("  ⚠ Authentication failed.")
+            if gs.authenticate():
+                print("  Google API connection successful!")
+                return True
+            else:
+                print("  ⚠ Google API connection failed.")
                 if Menu.prompt_yes_no("Retry?"):
                     return self._phase_google_api(rerun)
                 return False
-
-            print("  Authentication successful.")
-
-            # Test Google Sheets API — a lightweight metadata-only call
-            print("  Verifying Google Sheets API is enabled...")
-            sheets_ok = False
-            try:
-                gs._sheets_service.spreadsheets().get(
-                    spreadsheetId="nonexistent_test_id",
-                ).execute()
-            except Exception as e:
-                err_str = str(e)
-                if "404" in err_str or "not found" in err_str.lower():
-                    # 404 means the API is enabled (it looked for the
-                    # spreadsheet and correctly reported it missing)
-                    sheets_ok = True
-                elif "403" in err_str and "not have permission" in err_str.lower():
-                    # Could be API not enabled or service account lacks scope
-                    sheets_ok = False
-                elif "403" in err_str and "has not been used" in err_str.lower():
-                    sheets_ok = False
-                elif "403" in err_str and "is disabled" in err_str.lower():
-                    sheets_ok = False
-                else:
-                    # Other errors (network, etc.) — assume it's enabled
-                    sheets_ok = True
-
-            if sheets_ok:
-                print("    Google Sheets API: enabled")
-            else:
-                print("    ⚠ Google Sheets API: NOT enabled or not accessible")
-                print("      To fix this:")
-                print("      1. Go to https://console.cloud.google.com/")
-                print("      2. Select your project")
-                print("      3. Go to APIs & Services > Library")
-                print("      4. Search for 'Google Sheets API' and enable it")
-
-            # Test Google Drive API — list files (limit 1)
-            print("  Verifying Google Drive API is enabled...")
-            drive_ok = False
-            try:
-                gs._drive_service.files().list(
-                    pageSize=1, fields="files(id)",
-                ).execute()
-                drive_ok = True
-            except Exception as e:
-                err_str = str(e)
-                if "403" in err_str and (
-                    "has not been used" in err_str.lower()
-                    or "is disabled" in err_str.lower()
-                    or "not have permission" in err_str.lower()
-                ):
-                    drive_ok = False
-                else:
-                    # Other errors — assume it's enabled
-                    drive_ok = True
-
-            if drive_ok:
-                print("    Google Drive API: enabled")
-            else:
-                print("    ⚠ Google Drive API: NOT enabled or not accessible")
-                print("      To fix this:")
-                print("      1. Go to https://console.cloud.google.com/")
-                print("      2. Select your project")
-                print("      3. Go to APIs & Services > Library")
-                print("      4. Search for 'Google Drive API' and enable it")
-
-            if sheets_ok and drive_ok:
-                print("\n  Google API verification complete — both APIs are working.")
-                return True
-            else:
-                print("\n  ⚠ One or more Google APIs are not enabled.")
-                print("  The tool requires both the Google Sheets API and the")
-                print("  Google Drive API to be enabled in your Google Cloud project.")
-                if Menu.prompt_yes_no("Continue anyway? (You can enable them later)"):
-                    return True
-                if Menu.prompt_yes_no("Retry after enabling the APIs?"):
-                    return self._phase_google_api(rerun)
-                return False
-
         except Exception as e:
             print(f"  ⚠ Google API error: {e}")
             if Menu.prompt_yes_no("Continue anyway? (You can fix this later)"):
@@ -1286,39 +1195,8 @@ class SetupWizard:
         """Phase 8: Subject descriptor configuration."""
         current_num = self.config.get("subject_descriptors", "num_columns", default=9)
 
-        print("\n  Subject descriptors capture the topics and people associated with")
-        print("  each accession. In ArchivesSpace, these are recorded as linked")
-        print("  'subjects' (e.g., 'Women's History', 'Civil Rights') and 'agents'")
-        print("  (e.g., people or organizations serving as donors or creators).")
-        print()
-        print("  What these columns do:")
-        print("  The program pulls each accession's linked subjects and agents from")
-        print("  ArchivesSpace and maps them into separate columns in the spreadsheet.")
-        print("  Each column holds one descriptor, so the number of columns sets the")
-        print("  maximum number of descriptors that can be displayed per accession.")
-        print("  If an accession has fewer descriptors than columns, the extra columns")
-        print("  stay empty. If it has more, the extras are truncated and the program")
-        print("  logs a warning.")
-        print()
-        print("  How they factor into scoring:")
-        print("  Subject descriptors are one of the three default scoring dimensions")
-        print("  in the weighted scoring model (default weight: 0.3, or 30% of the")
-        print("  total score). Accessions with descriptors that match your institution's")
-        print("  strategic priorities receive higher scores, helping surface collections")
-        print("  that align with your collecting focus or current research demand.")
-        print("  The approved descriptors list (configured later or via the interactive")
-        print("  menu) controls which subjects are recognized for scoring purposes.")
-        print()
-        print(f"  Number of columns:")
-        print(f"  The program currently provides {current_num} columns. This is sufficient")
-        print("  for most repositories. Increase this number if your accessions")
-        print("  routinely have many linked subjects; decrease it if you want a")
-        print("  narrower spreadsheet.")
-
-        num_str = Menu.prompt_text(
-            "Number of Subject Descriptor columns:",
-            default=str(current_num),
-        )
+        print(f"\n  Subject Descriptor columns: currently {current_num}")
+        num_str = Menu.prompt_text("Number of Subject Descriptor columns:", default=str(current_num))
         try:
             num = int(num_str)
         except ValueError:
@@ -1326,125 +1204,36 @@ class SetupWizard:
         self.config.set("subject_descriptors", "num_columns", value=num)
         self.progress.complete_step(8, 1)
 
-        print()
-        print("  You can scan your ArchivesSpace repository to discover which")
-        print("  subjects and agents are linked to accessions. This builds the")
-        print("  'approved descriptors' list — the master list of subjects the")
-        print("  program recognizes when populating the spreadsheet.")
-        print()
-        print("  Scanning is optional. You can also curate the list later through")
-        print("  the interactive menu (Option 13: Manage subject descriptors).")
-
-        if Menu.prompt_yes_no(
-            "Scan repository for subjects and agents?", default=False,
-        ):
-            self._scan_repository_for_subjects()
+        if Menu.prompt_yes_no("Scan repository for subjects and agents to build the approved list?", default=False):
+            try:
+                from sync.archivesspace import ArchivesSpaceClient
+                if not self._logger:
+                    self._logger = LoggingManager(self.config)
+                client = ArchivesSpaceClient(self.config, self._logger)
+                if client.connect():
+                    results = client.scan_subjects_and_agents()
+                    subjects = results.get("subjects", [])
+                    agents = results.get("agents", [])
+                    print(f"  Found {len(subjects)} subjects and {len(agents)} agents (role: Subject)")
+                    print("  These can be curated through the interactive menu.")
+            except Exception as e:
+                print(f"  Scan error: {e}")
 
         return True
-
-    def _scan_repository_for_subjects(self) -> None:
-        """Scan ArchivesSpace for subjects and agents, save results to file."""
-        try:
-            from sync.archivesspace import ArchivesSpaceClient
-            if not self._logger:
-                self._logger = LoggingManager(self.config)
-            client = ArchivesSpaceClient(self.config, self._logger)
-            if not client.connect():
-                print("  Could not connect to ArchivesSpace.")
-                return
-
-            print("  Scanning for linked subjects and agents...")
-            results = client.scan_subjects_and_agents()
-            subjects = results.get("subjects", [])
-            agents = results.get("agents", [])
-
-            print(f"\n  Found {len(subjects)} subject(s) and {len(agents)} agent(s).")
-
-            # Display a preview in the terminal
-            if subjects:
-                print(f"\n  Subjects (showing up to 20):")
-                for s in subjects[:20]:
-                    if isinstance(s, dict):
-                        print(f"    - {s.get('title', s.get('name', str(s)))}")
-                    else:
-                        print(f"    - {s}")
-                if len(subjects) > 20:
-                    print(f"    ... and {len(subjects) - 20} more (see text file)")
-
-            if agents:
-                print(f"\n  Agents (showing up to 10):")
-                for a in agents[:10]:
-                    if isinstance(a, dict):
-                        print(f"    - {a.get('title', a.get('name', str(a)))}")
-                    else:
-                        print(f"    - {a}")
-                if len(agents) > 10:
-                    print(f"    ... and {len(agents) - 10} more (see text file)")
-
-            # Save to a text file so results persist after the terminal closes
-            output_path = self.config.project_root / "scan_results_subjects.txt"
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write("Subject Descriptor Scan Results\n")
-                f.write(f"{'=' * 50}\n")
-                f.write(f"Repository: {self.config.get_base_url()}\n")
-                f.write(f"Total subjects: {len(subjects)}\n")
-                f.write(f"Total agents: {len(agents)}\n\n")
-
-                f.write("SUBJECTS\n")
-                f.write(f"{'-' * 50}\n")
-                if subjects:
-                    for s in subjects:
-                        if isinstance(s, dict):
-                            title = s.get("title", s.get("name", str(s)))
-                            uri = s.get("uri", "")
-                            f.write(f"  {title}")
-                            if uri:
-                                f.write(f"  ({uri})")
-                            f.write("\n")
-                        else:
-                            f.write(f"  {s}\n")
-                else:
-                    f.write("  (none found)\n")
-
-                f.write(f"\nAGENTS\n")
-                f.write(f"{'-' * 50}\n")
-                if agents:
-                    for a in agents:
-                        if isinstance(a, dict):
-                            title = a.get("title", a.get("name", str(a)))
-                            uri = a.get("uri", "")
-                            f.write(f"  {title}")
-                            if uri:
-                                f.write(f"  ({uri})")
-                            f.write("\n")
-                        else:
-                            f.write(f"  {a}\n")
-                else:
-                    f.write("  (none found)\n")
-
-            print(f"\n  Full results saved to: {output_path}")
-            print("  Review this file and curate the approved descriptors list")
-            print("  through the interactive menu (Option 13: Manage subject descriptors).")
-
-        except Exception as e:
-            print(f"  Scan error: {e}")
 
     def _phase_issue_columns(self, rerun: bool = False) -> bool:
         """Phase 9: Issue column configuration."""
         print("\n  The tool has six issue columns, each with different detection approaches.")
         print("  Detailed configuration can be done through the interactive menu.")
-        print("  For now, the defaults will be applied.\n")
+        print("  For now, the defaults will be applied.")
 
-        print("  Default issue column settings:")
-        print("    Access Issues:        Checks the access_restrictions field")
-        print("    Conservation Issues:  Scans condition_description for keywords")
-        print("    Digital Issues:       Rule-based (digital extent without digital object)")
-        print("    Documentation Issues: Manual dropdown (3 default options)")
-        print("    Other Processing Info: Auto-populated via keyword matching")
-        print("    Physical Space Issues: Manual dropdown")
-        print()
-        print("  You can customize detection rules, keywords, and dropdown options")
-        print("  through the interactive menu (Options 8, 10, and 11).")
+        if Menu.prompt_yes_no("Review the default issue column settings?", default=False):
+            print("\n  Access Issues: Checks access_restrictions field")
+            print("  Conservation Issues: Scans condition_description")
+            print("  Digital Issues: Rule-based (digital extent without digital object)")
+            print("  Documentation Issues: Manual dropdown (3 defaults)")
+            print("  Other Processing Info: Auto-populated via keyword matching")
+            print("  Physical Space Issues: Manual dropdown")
 
         return True
 
@@ -1703,8 +1492,6 @@ class SetupWizard:
             score += 1
 
         # Allow adding more
-        print(f"\n  All {len(mappings)} existing priority values have been configured.")
-        print("  You can add additional levels or press Enter to finish.\n")
         while True:
             val = Menu.prompt_text(
                 f"  Value for score {score} (or 'done')",
@@ -1906,27 +1693,14 @@ class SetupWizard:
                     self._logger = LoggingManager(self.config)
                 from sync.notifications import NotificationManager
                 nm = NotificationManager(self.config, self._logger)
-                success, error_msg = nm.send_test_email()
-                if success:
-                    print("  ✓ Test email sent! Check your inbox.")
+                if nm.send_test_email():
+                    print("  Test email sent! Check your inbox.")
                 else:
-                    print("  ⚠ Test email failed.")
-                    if error_msg:
-                        print(f"  Error detail: {error_msg}")
-                    print()
-                    print("  Common causes:")
-                    print("    - Gmail and Outlook require an App Password, not your")
-                    print("      regular login password. Generate one at:")
-                    print("      Gmail:   https://myaccount.google.com/apppasswords")
-                    print("      Outlook: https://account.microsoft.com/security")
-                    print("    - Wrong SMTP server or port (587 for STARTTLS, 465 for SSL)")
-                    print("    - Firewall or antivirus blocking outbound SMTP connections")
+                    print("  ⚠ Test email failed. Check your SMTP settings.")
                     if Menu.prompt_yes_no("Retry this step?"):
                         return self._phase_email(rerun)
             except Exception as e:
-                print(f"  ⚠ Unexpected error: {e}")
-                if Menu.prompt_yes_no("Retry this step?"):
-                    return self._phase_email(rerun)
+                print(f"  ⚠ Error: {e}")
 
         return True
 
@@ -2023,89 +1797,22 @@ class SetupWizard:
                     print(f"  Spreadsheet already exists: {em.get_file_path()}")
                     return True
                 path = em.create_spreadsheet(headers)
-                print(f"  ✓ Spreadsheet created: {path}")
+                print(f"  Spreadsheet created: {path}")
 
             elif output_format == "google_sheets":
-                # Show the service account's project ID for diagnostic purposes
-                self._show_service_account_project()
-
                 from sync.google_sheets import GoogleSheetsManager
                 gs = GoogleSheetsManager(self.config, self._logger)
                 if not gs.authenticate():
                     print("  ⚠ Could not authenticate with Google APIs.")
                     return False
                 url = gs.create_spreadsheet(headers)
-                print(f"  ✓ Google Sheet created: {url}")
+                print(f"  Google Sheet created: {url}")
 
             return True
 
         except Exception as e:
             print(f"  ⚠ Error creating spreadsheet: {e}")
-            if "403" in str(e) and "permission" in str(e).lower():
-                print()
-                print("  This error typically means the service account is blocked")
-                print("  from creating spreadsheets. Possible causes:")
-                print("    - Google Sheets API or Google Drive API not enabled for")
-                print("      the project that owns this service account")
-                print("    - Google Workspace domain policy blocking the service account")
-                print("    - Service account storage quota exceeded")
-                print()
-                print("  Verify at: https://console.cloud.google.com/apis/dashboard")
-                print("  Ensure the APIs are enabled for the correct project (see")
-                print("  the project_id shown above).")
             return False
-
-    @staticmethod
-    def _clean_file_path(raw_path: str) -> str:
-        """
-        Clean a file path that may have been pasted from the clipboard.
-
-        Handles:
-        - Leading/trailing whitespace
-        - ASCII double and single quotes (Windows "Copy as path")
-        - Unicode smart/typographic quotes (some terminals, word processors)
-        - BOM (byte order mark) and other invisible Unicode characters
-        - Zero-width spaces and direction marks
-        """
-        # Strip whitespace first
-        path = raw_path.strip()
-
-        # Remove BOM and common invisible Unicode characters
-        invisible = "﻿​‌‍‎‏⁠￾"
-        for char in invisible:
-            path = path.replace(char, "")
-
-        # Strip both ASCII and Unicode quotation marks from the ends
-        # ASCII: " (0x22), ' (0x27)
-        # Unicode: “ " left double, ” " right double,
-        #          ‘ ' left single, ’ ' right single,
-        #          « « left guillemet, » » right guillemet
-        quote_chars = "\"'“”‘’«»"
-        path = path.strip(quote_chars)
-
-        # Final whitespace cleanup
-        path = path.strip()
-
-        return path
-
-    def _show_service_account_project(self) -> None:
-        """Display the project_id from the service account key file for diagnostics."""
-        import json as _json
-        key_path = self.config.get_credential(
-            "google", "service_account_key_path", default=""
-        )
-        if not key_path:
-            return
-        try:
-            with open(key_path, "r") as f:
-                key_data = _json.load(f)
-            project_id = key_data.get("project_id", "(not found)")
-            client_email = key_data.get("client_email", "(not found)")
-            print(f"  Service account project: {project_id}")
-            print(f"  Service account email:   {client_email}")
-            print()
-        except Exception:
-            pass
 
     def _phase_first_sync(self, rerun: bool = False) -> bool:
         """Phase 17: Offer to run the first sync."""
@@ -2145,6 +1852,3 @@ class SetupWizard:
         print("\n" + "=" * 60)
         print("  archivesspace-accession-sync — Setup Wizard")
         print("=" * 60)
-        print()
-        print("  Tip: When a prompt shows [default is ...], you can press")
-        print("  Enter to accept the default value without typing anything.")
