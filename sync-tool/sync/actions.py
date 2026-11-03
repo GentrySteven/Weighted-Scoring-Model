@@ -15,6 +15,7 @@ These were previously defined in sync/cli.py but were extracted here
 to keep that module focused on entry points and argument parsing.
 """
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -153,15 +154,51 @@ def _action_view_log_storage(logger: LoggingManager) -> None:
 
 
 def _action_consolidate_logs(logger: LoggingManager) -> None:
-    """Manually trigger log consolidation."""
-    print("  Running log consolidation...")
+    """Manually trigger log consolidation with details and override."""
+    # Report consolidation details
+    grace = logger.grace_period_days
+    freq = logger.consolidation_freq
+    print(f"\n  Consolidation frequency: {freq}")
+    print(f"  Grace period: {grace} day(s)")
+
+    # Count files eligible
+    daily_logs = logger._find_daily_logs()
+    print(f"  Daily log files found: {len(daily_logs)}")
+
+    if daily_logs:
+        from datetime import datetime as dt, timedelta
+        today = dt.now().date()
+        within_grace = [
+            lp for lp in daily_logs
+            if (d := logger._extract_date_from_filename(lp.name))
+            and (today - d).days <= grace
+        ]
+        beyond_grace = len(daily_logs) - len(within_grace)
+        print(f"  Within grace period (not consolidated): {len(within_grace)}")
+        print(f"  Beyond grace period (will consolidate): {beyond_grace}")
+
+    print("\n  Running consolidation...")
     logger._check_consolidation()
     print("  Consolidation complete.")
+
+    # Offer override to consolidate files still within grace period
+    remaining_daily = logger._find_daily_logs()
+    if remaining_daily:
+        print(f"\n  {len(remaining_daily)} daily log(s) remain (within grace period).")
+        if Menu.prompt_yes_no(
+            "  Bypass grace period and consolidate all remaining logs?",
+            default=False,
+        ):
+            original_grace = logger.grace_period_days
+            logger.grace_period_days = 0
+            logger._check_consolidation()
+            logger.grace_period_days = original_grace
+            print("  All daily logs consolidated.")
 
     # Check and process retention
     expired = logger.check_retention()
     if expired:
-        print(f"  Found {len(expired)} log(s) exceeding retention period.")
+        print(f"\n  Found {len(expired)} log(s) exceeding retention period.")
         logger.archive_logs(expired)
         print(f"  Archived {len(expired)} log(s).")
 
@@ -216,10 +253,25 @@ def _action_manage_schedule(
 ) -> None:
     """Manage a scheduled job (create, modify, or remove)."""
     job_type = "dry run" if dry_run else "sync"
-    info = scheduler.get_job_info(dry_run=dry_run)
+
+    # Display both schedules for context before management options.
+    sync_info = scheduler.get_job_info(dry_run=False)
+    dry_info = scheduler.get_job_info(dry_run=True)
+    print(f"\n  Current schedules:")
+    if sync_info:
+        print(f"    Sync:    {sync_info.get('schedule', 'unknown')} at {sync_info.get('time', 'unknown')}")
+    else:
+        print(f"    Sync:    not scheduled")
+    if dry_info:
+        print(f"    Dry run: {dry_info.get('schedule', 'unknown')} at {dry_info.get('time', 'unknown')}")
+    else:
+        print(f"    Dry run: not scheduled")
+    print()
+
+    info = sync_info if not dry_run else dry_info
 
     if info:
-        print(f"  Current {job_type} job: {info.get('schedule', 'unknown')} at {info.get('time', 'unknown')}")
+        print(f"  Managing {job_type} schedule ({info.get('schedule', 'unknown')} at {info.get('time', 'unknown')}).")
         choice = Menu.prompt_choice(
             f"Manage {job_type} schedule:",
             ["Modify", "Remove", "Cancel"],
@@ -305,8 +357,50 @@ def _action_view_backups(config: ConfigManager) -> None:
             print(f"    {b.name} ({size:.1f} KB)")
 
     elif output_format == "google_sheets":
-        print("  Google Sheets backup listing requires Drive API access.")
-        print("  Check your Google Drive backup folder directly.")
+        # Use Drive API to list backup files in the backup folder.
+        backup_folder_id = config.get("google_sheets", "backup_folder_id", default="")
+        if not backup_folder_id:
+            print("  No backup folder configured.")
+            print("  Backups are created during sync operations.")
+            return
+
+        try:
+            from sync.google_sheets import GoogleSheetsManager
+            gs = GoogleSheetsManager(config, LoggingManager(config))
+            drive = gs.get_drive_service()
+            if not drive:
+                print("  Could not connect to Google Drive.")
+                return
+
+            results = drive.files().list(
+                q=f"'{backup_folder_id}' in parents and trashed=false",
+                orderBy="createdTime desc",
+                pageSize=20,
+                fields="files(id, name, createdTime, size)",
+            ).execute()
+
+            files = results.get("files", [])
+            if not files:
+                print("  No backups found in the backup folder.")
+                return
+
+            print(f"  Found {len(files)} backup(s) in Google Drive:\n")
+            for f in files:
+                name = f.get("name", "Unknown")
+                created = f.get("createdTime", "")
+                size = int(f.get("size", 0))
+                if created:
+                    try:
+                        dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                        created = dt.strftime("%B %d, %Y %I:%M %p")
+                    except (ValueError, TypeError):
+                        pass
+                size_str = f"{size / 1024:.1f} KB" if size < 1024 * 1024 else f"{size / (1024 * 1024):.1f} MB"
+                print(f"    {name}")
+                print(f"      Created: {created}  Size: {size_str}")
+        except Exception as e:
+            print(f"  Could not list backups: {e}")
+            print("  Check your Google Drive backup folder directly.")
 
 
 def _action_view_cache(config: ConfigManager) -> None:
@@ -424,6 +518,7 @@ def _action_manage_vocabularies(config: ConfigManager, logger: LoggingManager) -
         "Access Issues": "access_issues_vocabulary",
         "Conservation Issues": "conservation_issues_vocabulary",
         "Digital Issues": "digital_issues_vocabulary",
+        "Documentation and Use Issues": "documentation_use_issues_options",
         "Other Processing Information": "other_processing_options",
         "Physical Space Management Issues": "physical_space_options",
     }
@@ -567,25 +662,128 @@ def _action_manage_subject_list(config: ConfigManager, logger: LoggingManager) -
     print("\n  This list is stored in a hidden sheet within the spreadsheet")
     print("  and can be updated by scanning your repository.")
 
+    # Show current approved list
+    approved = config.get_data("approved_subject_descriptors", default=[]) or []
+    print(f"\n  Current approved descriptors: {len(approved)}")
+    if approved:
+        for idx, term in enumerate(approved[:10], 1):
+            print(f"    {idx}. {term}")
+        if len(approved) > 10:
+            print(f"    ... and {len(approved) - 10} more")
+
     choice = Menu.prompt_choice(
         "Action:",
         [
             "Scan repository for subjects and agents",
-            "View current configuration",
+            "View all approved descriptors",
+            "Add a descriptor manually",
+            "Remove a descriptor",
             "Cancel",
         ],
     )
 
     if choice == 0:
-        from sync.scanning import ScanningFramework
-        scanner = ScanningFramework(config, logger)
-        scanner.scan_menu("subjects")
+        # Use scan_subjects_and_agents() from ArchivesSpace client
+        print("\n  Connecting to ArchivesSpace...")
+        try:
+            from sync.archivesspace import ArchivesSpaceClient
+            client = ArchivesSpaceClient(config, logger)
+            if not client.connect():
+                print("  Could not connect to ArchivesSpace.")
+                return
+
+            print("  Scanning subjects and agents across accession records...")
+            results = client.scan_subjects_and_agents()
+            subjects = results.get("subjects", [])
+            agents = results.get("agents", [])
+
+            all_found: list[str] = []
+            for s in subjects:
+                title = s.get("title", "")
+                if title:
+                    all_found.append(title)
+            for a in agents:
+                title = a.get("title", "")
+                if title:
+                    all_found.append(title)
+
+            all_found = sorted(set(all_found))
+
+            if not all_found:
+                print("  No subjects or agents found.")
+                return
+
+            print(f"\n  Found {len(all_found)} unique subjects/agents.")
+
+            # Show new items (not already approved)
+            new_items = [t for t in all_found if t not in approved]
+            if not new_items:
+                print("  All found descriptors are already approved.")
+                return
+
+            print(f"  {len(new_items)} not yet approved:\n")
+            for idx, term in enumerate(new_items[:20], 1):
+                print(f"    {idx}. {term}")
+            if len(new_items) > 20:
+                print(f"    ... and {len(new_items) - 20} more")
+
+            # Approval flow
+            approve_choice = Menu.prompt_choice(
+                "\n  How would you like to proceed?",
+                [
+                    "Approve all new descriptors",
+                    "Review one by one",
+                    "Cancel",
+                ],
+            )
+
+            if approve_choice == 0:
+                approved.extend(new_items)
+            elif approve_choice == 1:
+                for term in new_items:
+                    if Menu.prompt_yes_no(f"  Approve '{term}'?", default=True):
+                        approved.append(term)
+            else:
+                return
+
+            approved = sorted(set(approved))
+            config.set_data("approved_subject_descriptors", value=approved)
+            config.save_data()
+            logger.summary(f"Approved subject descriptors updated: {len(approved)} total.")
+            print(f"\n  Approved list updated: {len(approved)} total descriptors.")
+            print("  The hidden sheet will be updated on the next sync.")
+
+        except ImportError:
+            print("  ArchivesSnake not installed — cannot scan repository.")
+        except Exception as e:
+            print(f"  Scan failed: {e}")
+            logger.error(f"Subject scan failed: {e}")
 
     elif choice == 1:
-        num_cols = config.get("subject_descriptors", "num_columns", default=9)
-        print(f"\n  Subject Descriptor columns: {num_cols}")
-        print("  Approved list: managed in the spreadsheet's hidden sheet.")
-        print("  Run a scan to discover and approve subjects from your repository.")
+        if not approved:
+            print("\n  No approved descriptors.")
+        else:
+            print(f"\n  All approved descriptors ({len(approved)}):")
+            for idx, term in enumerate(approved, 1):
+                print(f"    {idx}. {term}")
+
+    elif choice == 2:
+        new_term = Menu.prompt_text("Descriptor to add:")
+        if new_term and new_term not in approved:
+            approved.append(new_term)
+            approved.sort()
+            config.set_data("approved_subject_descriptors", value=approved)
+            config.save_data()
+            print(f"  Added: {new_term}")
+
+    elif choice == 3:
+        if approved:
+            # Show paginated list for selection
+            del_idx = Menu.prompt_choice("Remove which descriptor?", approved)
+            removed = approved.pop(del_idx)
+            config.set_data("approved_subject_descriptors", value=approved)
+            config.save_data()
+            print(f"  Removed: {removed}")
 
 
 def _action_view_scoring_criteria(config: ConfigManager) -> None:
@@ -597,7 +795,7 @@ def _action_view_scoring_criteria(config: ConfigManager) -> None:
 
     if not dimensions:
         print("  No scoring criteria configured.")
-        print("  Run option 15 (Edit scoring criteria) or re-run the setup wizard.")
+        print("  Run 'Edit scoring criteria' from the menu or re-run the setup wizard.")
         return
 
     total_weight = 0.0
@@ -735,6 +933,7 @@ def _action_edit_processing_queues(
                 "Modify an existing queue",
                 "Remove a queue",
                 "Edit Backlog At a Glance status groups",
+                "Manage processing project types",
                 "Save and exit",
             ],
         )
@@ -795,6 +994,10 @@ def _action_edit_processing_queues(
             _edit_backlog_at_a_glance_groups(config)
 
         elif choice == 4:
+            # Manage processing project types
+            _manage_processing_project_types(config)
+
+        elif choice == 5:
             # Save and exit
             pq["queues"] = queues
             config.set_data("processing_queue", value=pq)
@@ -869,4 +1072,33 @@ def _edit_backlog_at_a_glance_groups(config: ConfigManager) -> None:
             config.save_data()
             print("\n  Status groups saved.")
             return
+
+
+def _manage_processing_project_types(config: ConfigManager) -> None:
+    """Manage the list of processing project types (dropdown values)."""
+    options = config.get_data("processing_project_types", default=[]) or []
+
+    print(f"\n  Processing project types ({len(options)}):")
+    for idx, opt in enumerate(options, 1):
+        print(f"    {idx}. {opt}")
+
+    action = Menu.prompt_choice(
+        "Action:", ["Add a type", "Remove a type", "Done"],
+    )
+
+    if action == 0:
+        new_opt = Menu.prompt_text("New processing project type:")
+        if new_opt and new_opt not in options:
+            options.append(new_opt)
+            config.set_data("processing_project_types", value=options)
+            config.save_data()
+            print(f"  Added: {new_opt}")
+
+    elif action == 1:
+        if options:
+            del_idx = Menu.prompt_choice("Remove which type?", options)
+            removed = options.pop(del_idx)
+            config.set_data("processing_project_types", value=options)
+            config.save_data()
+            print(f"  Removed: {removed}")
 

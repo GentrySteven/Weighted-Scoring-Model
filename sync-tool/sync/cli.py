@@ -58,7 +58,7 @@ def run_interactive(config: ConfigManager, logger: LoggingManager) -> None:
     from sync.actions import (
         _action_clear_cache, _action_consolidate_logs,
         _action_edit_processing_queues, _action_edit_scoring_criteria,
-        _action_last_sync_status, _action_manage_dropdowns,
+        _action_last_sync_status,
         _action_manage_extents, _action_manage_previews,
         _action_manage_schedule, _action_manage_subject_list,
         _action_manage_triggers, _action_manage_vocabularies,
@@ -91,11 +91,9 @@ def run_interactive(config: ConfigManager, logger: LoggingManager) -> None:
     from sync.scanning import ScanningFramework
     scanner = ScanningFramework(config, logger)
     menu.register_action("scan_formats", lambda: scanner.scan_menu("formats"))
-    menu.register_action("scan_subjects", lambda: scanner.scan_menu("subjects"))
     menu.register_action("scan_issues", lambda: scanner.scan_menu("issues"))
     menu.register_action("manage_extents", lambda: _action_manage_extents(config, logger))
     menu.register_action("manage_vocabs", lambda: _action_manage_vocabularies(config, logger))
-    menu.register_action("manage_dropdowns", lambda: _action_manage_dropdowns(config))
     menu.register_action("manage_triggers", lambda: _action_manage_triggers(config, logger))
     menu.register_action("manage_subjects", lambda: _action_manage_subject_list(config, logger))
     menu.register_action("view_scoring", lambda: _action_view_scoring_criteria(config))
@@ -113,6 +111,7 @@ def run_interactive(config: ConfigManager, logger: LoggingManager) -> None:
     menu.register_action("view_log_storage", lambda: _action_view_log_storage(logger))
     menu.register_action("consolidate_logs", lambda: _action_consolidate_logs(logger))
     menu.register_action("reconfigure", lambda: _action_reconfigure(config))
+    menu.register_action("show_tour", lambda: menu._run_tour())
 
     # File management
     menu.register_action("manage_previews", lambda: _action_manage_previews(config, logger))

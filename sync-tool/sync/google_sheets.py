@@ -210,7 +210,10 @@ class GoogleSheetsManager:
         if dimensions:
             batch_requests.append({
                 "addSheet": {
-                    "properties": {"title": SCORING_SHEET}
+                    "properties": {
+                        "title": SCORING_SHEET,
+                        "hidden": True,
+                    }
                 }
             })
 
@@ -240,10 +243,13 @@ class GoogleSheetsManager:
                     body={"values": values},
                 ).execute()
                 self.logger.technical(
-                    f"Populated scoring criteria sheet with {len(dimensions)} dimensions."
+                    f"Populated scoring criteria sheet with {len(dimensions)} dimensions (hidden)."
                 )
 
-        # Step 5: Apply sharing permissions (folder placement already
+        # Step 5: Apply data validation (dropdowns) to the main sheet.
+        self._apply_data_validation(headers)
+
+        # Step 6: Apply sharing permissions (folder placement already
         # handled by the parents field in Step 1).
         self._apply_sharing_permissions()
 
@@ -338,7 +344,10 @@ class GoogleSheetsManager:
         if dimensions and SCORING_SHEET not in existing_sheet_names:
             batch_requests.append({
                 "addSheet": {
-                    "properties": {"title": SCORING_SHEET}
+                    "properties": {
+                        "title": SCORING_SHEET,
+                        "hidden": True,
+                    }
                 }
             })
 
@@ -373,6 +382,9 @@ class GoogleSheetsManager:
                 self.logger.technical(
                     f"Populated scoring criteria sheet with {len(dimensions)} dimensions."
                 )
+
+        # Apply data validation (dropdowns) to the main sheet
+        self._apply_data_validation(headers)
 
         # Normalize and save the URL
         clean_url = f"https://docs.google.com/spreadsheets/d/{self._spreadsheet_id}"
@@ -461,19 +473,22 @@ class GoogleSheetsManager:
             acc_id = row_data.get("Accession ID")
 
             for header in headers:
+                # Formula columns: use dynamic column map for correct references.
+                # Checked BEFORE protected columns because scoring columns are
+                # both protected (to preserve values during data sync) and
+                # formula-based (formulas should be regenerated on every write).
+                column_map = {h: i + 1 for i, h in enumerate(headers)}
+                formula = self.validator.get_column_formula(header, actual_row, column_map)
+                if formula:
+                    row_values.append(formula)
+                    continue
+
                 # Protected columns: look up the existing value from our
                 # pre-read data and pass it through unchanged
                 if self.validator.is_protected_column(header, is_completion_event):
                     existing_row = existing_data.get(int(acc_id) if acc_id else 0, {})
                     existing_val = existing_row.get(header, "")
                     row_values.append(existing_val if existing_val else "")
-                    continue
-
-                # Formula columns: use dynamic column map for correct references
-                column_map = {h: i + 1 for i, h in enumerate(headers)}
-                formula = self.validator.get_column_formula(header, actual_row, column_map)
-                if formula:
-                    row_values.append(formula)
                     continue
 
                 # Subject descriptors: match by column number
@@ -741,6 +756,111 @@ class GoogleSheetsManager:
             ).execute()
         except Exception as e:
             self.logger.warning(f"Failed to move file to folder: {e}")
+
+    def _apply_data_validation(self, headers: list[str]) -> None:
+        """Apply data validation (dropdowns) to columns in the main sheet.
+
+        Creates Google Sheets ``setDataValidation`` requests for:
+        - Format columns (TRUE/FALSE checkboxes)
+        - Accession Status (from processing_queue status_values)
+        - Kind of Processing Project (from processing_project_types)
+        - Documentation and Use Issues (from documentation_use_issues_options)
+        """
+        try:
+            sheet_id = self._get_sheet_id("Accession Data and Scores")
+            requests: list[dict] = []
+
+            # --- Build column index lookup ---
+            col_index = {h: i for i, h in enumerate(headers)}
+
+            # --- TRUE/FALSE validation for format columns ---
+            format_keywords = self.config.get("format_keywords", default={})
+            for header in headers:
+                if header in format_keywords and header in col_index:
+                    idx = col_index[header]
+                    requests.append(self._dv_request(
+                        sheet_id, idx, ["TRUE", "FALSE"],
+                    ))
+
+            # --- Accession Status dropdown ---
+            if "Accession Status" in col_index:
+                # Collect all unique status values from processing_queue
+                # and backlog_at_a_glance configs.
+                status_set: set[str] = set()
+                pq = self.config.get_data("processing_queue", default={})
+                for queue in pq.get("queues", []):
+                    for sv in queue.get("status_values", []):
+                        status_set.add(sv)
+                baag = self.config.get_data("backlog_at_a_glance", default={})
+                for group in baag.get("status_groups", []):
+                    for sv in group.get("status_values", []):
+                        status_set.add(sv)
+                if status_set:
+                    requests.append(self._dv_request(
+                        sheet_id, col_index["Accession Status"],
+                        sorted(status_set),
+                    ))
+
+            # --- Kind of Processing Project dropdown ---
+            if "Kind of Processing Project" in col_index:
+                ppt = self.config.get_data(
+                    "processing_project_types", default=[],
+                )
+                if ppt:
+                    requests.append(self._dv_request(
+                        sheet_id, col_index["Kind of Processing Project"],
+                        list(ppt),
+                    ))
+
+            # --- Documentation and Use Issues dropdown ---
+            if "Documentation and Use Issues" in col_index:
+                duio = self.config.get_data(
+                    "documentation_use_issues_options", default=[],
+                )
+                if duio:
+                    requests.append(self._dv_request(
+                        sheet_id,
+                        col_index["Documentation and Use Issues"],
+                        list(duio),
+                    ))
+
+            if requests:
+                time.sleep(self.throttle_sheets)
+                self._sheets_service.spreadsheets().batchUpdate(
+                    spreadsheetId=self._spreadsheet_id,
+                    body={"requests": requests},
+                ).execute()
+                self.logger.technical(
+                    f"Applied data validation to {len(requests)} column(s)."
+                )
+        except Exception as e:
+            self.logger.warning(f"Failed to apply data validation: {e}")
+
+    @staticmethod
+    def _dv_request(
+        sheet_id: int, col_index: int, values: list[str],
+    ) -> dict:
+        """Build a single ``setDataValidation`` batchUpdate request."""
+        return {
+            "setDataValidation": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 1,       # skip header row
+                    "startColumnIndex": col_index,
+                    "endColumnIndex": col_index + 1,
+                },
+                "rule": {
+                    "condition": {
+                        "type": "ONE_OF_LIST",
+                        "values": [
+                            {"userEnteredValue": v} for v in values
+                        ],
+                    },
+                    "showCustomUi": True,
+                    "strict": False,
+                },
+            }
+        }
 
     def _get_sheet_id(self, name: str) -> int:
         time.sleep(self.throttle_sheets)
