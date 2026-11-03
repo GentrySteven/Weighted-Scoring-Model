@@ -238,7 +238,7 @@ def _create_templates(config: ConfigManager) -> None:
     template_dir = Path(__file__).resolve().parent.parent
 
     for src_name, dest_path in [
-        ("config.yml", config.config_path),
+        ("config_example.yml", config.config_path),
         ("credentials_example.yml", config.credentials_path),
         ("data_example.yml", config.data_path),
     ]:
