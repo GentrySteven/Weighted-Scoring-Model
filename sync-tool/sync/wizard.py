@@ -41,8 +41,8 @@ PHASES = [
     (14, "Scheduling", "Set up automatic sync and dry run schedules", False, [2, 3]),
     (15, "Directory Creation", "Create log, cache, and preview directories", True, []),
     (16, "Spreadsheet Creation", "Create the initial spreadsheet", True, [2, 3, 15]),
-    (17, "First Sync", "Run the initial synchronization", False, [16]),
-    (18, "Tour Offer", "Introduction to the interactive menu", False, []),
+    (17, "First Sync", "Run the initial synchronization", True, [16]),
+    (18, "Tour Offer", "Introduction to the interactive menu", True, []),
 ]
 
 # Common extent type suggestions
