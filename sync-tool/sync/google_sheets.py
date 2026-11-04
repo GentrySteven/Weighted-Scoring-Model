@@ -710,8 +710,16 @@ class GoogleSheetsManager:
             ).execute()
         self.logger.summary("Cleared all data from Google Sheet.")
 
-    def verify_permissions(self) -> bool:
-        """Verify and re-apply sharing permissions."""
+    def verify_permissions(self, send_notification: bool = False) -> bool:
+        """Verify and re-apply sharing permissions.
+
+        Args:
+            send_notification: If True, send a notification email when
+                granting new permissions.  Should only be True during
+                initial spreadsheet creation so the user is notified
+                once.  Subsequent verification calls (every sync run)
+                pass False to avoid duplicate sharing emails.
+        """
         sharing = self.config.get("google_sheets", "sharing", default=[])
         if not sharing:
             return True
@@ -728,8 +736,11 @@ class GoogleSheetsManager:
             for share in sharing:
                 email = share.get("email", "").lower()
                 role = share.get("role", "reader")
-                notify = share.get("notify", True)
                 if email not in current_emails or current_emails[email].get("role") != role:
+                    # Use the per-share notify preference only on the
+                    # initial share (send_notification=True).  Re-verification
+                    # calls always suppress the email to avoid duplicates.
+                    notify = share.get("notify", True) if send_notification else False
                     time.sleep(self.throttle_drive)
                     self._drive_service.permissions().create(
                         fileId=self._spreadsheet_id,
@@ -743,7 +754,8 @@ class GoogleSheetsManager:
             return False
 
     def _apply_sharing_permissions(self) -> None:
-        self.verify_permissions()
+        """Apply sharing permissions during initial spreadsheet creation."""
+        self.verify_permissions(send_notification=True)
 
     def _move_to_folder(self, file_id: str, folder_id: str) -> None:
         try:
