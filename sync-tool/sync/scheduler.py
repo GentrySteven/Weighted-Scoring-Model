@@ -53,9 +53,13 @@ class Scheduler:
 
     def create_job(
         self, frequency: str = "weekly", time_str: str = "20:00",
-        target: str = "excel", dry_run: bool = False,
+        target: str = "", dry_run: bool = False,
     ) -> bool:
         """Create a new scheduled job."""
+        # Fall back to the config's output format if no target given,
+        # rather than hardcoding "excel".
+        if not target:
+            target = self.config.get("output", "format", default="excel")
         # Remove existing job of this type
         self.remove_job(dry_run=dry_run)
 
@@ -107,7 +111,12 @@ class Scheduler:
 
         freq = frequency or current.get("frequency", "weekly")
         time_val = time_str or current.get("time", "20:00")
-        tgt = target or current.get("target", "excel")
+        # Always read the target from the live config rather than
+        # falling back to "excel".  The job-info dict returned by
+        # Task Scheduler / crontab does not carry a "target" key, so
+        # the previous fallback to "excel" would silently switch a
+        # Google-Sheets user to the Excel backend on every modify.
+        tgt = target or self.config.get("output", "format", default="excel")
 
         return self.create_job(frequency=freq, time_str=time_val, target=tgt, dry_run=dry_run)
 

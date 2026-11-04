@@ -76,6 +76,35 @@ def run_sync(
     had_changes = False
 
     try:
+        # Step 0: Verify the required backend library is available early,
+        # before connecting to ArchivesSpace or touching the spreadsheet.
+        # This prevents confusing error emails about missing libraries
+        # (e.g. openpyxl) when the user only installed one backend.
+        output_format = config.get_output_format()
+        if output_format == "excel":
+            try:
+                import openpyxl  # noqa: F401
+            except ImportError:
+                raise RuntimeError(
+                    "This sync is configured for Excel output, but openpyxl "
+                    "is not installed. Run:\n"
+                    "  pip install archivesspace-accession-sync[excel]"
+                )
+        elif output_format == "google_sheets":
+            try:
+                from googleapiclient import discovery  # noqa: F401
+            except ImportError:
+                raise RuntimeError(
+                    "This sync is configured for Google Sheets output, but "
+                    "the Google API libraries are not installed. Run:\n"
+                    "  pip install archivesspace-accession-sync[google]"
+                )
+        elif not output_format:
+            raise RuntimeError(
+                "No output format configured. Run the setup wizard or set "
+                "output.format to 'excel' or 'google_sheets' in config.yml."
+            )
+
         # Step 1: Check for pending staging data
         staging_data = _load_staging_data(config)
         if staging_data:
@@ -308,11 +337,42 @@ def run_sync(
         logger.error(str(e))
         if auto_mode:
             notifications.notify_sync_failure(str(e), phase="retrieval")
+            logger.end_run(success=False)
+            return False
+
+        # Interactive mode: offer inline categorization
+        print(f"\n  {e}")
+        ext_type = e.extent_type
+        if Menu.prompt_yes_no(f"  Categorize '{ext_type}' now?", default=True):
+            cat_idx = Menu.prompt_choice(
+                "  Category:", ["Physical", "Digital"],
+            )
+            category = "physical" if cat_idx == 0 else "digital"
+            unit = "linear feet" if category == "physical" else "gigabytes"
+            factor_str = Menu.prompt_text(
+                f"  Conversion factor (1 {ext_type} = ? {unit}):",
+                default="1.0",
+            )
+            try:
+                factor = float(factor_str)
+            except ValueError:
+                factor = 1.0
+
+            extent_types = config.get_data("extent_types", default={}) or {}
+            extent_types[ext_type] = {
+                "category": category,
+                "conversion_factor": factor,
+            }
+            config.set_data("extent_types", value=extent_types)
+            config.save_data()
+            print(f"  Saved: {ext_type} = {category}, factor {factor}")
+            print("  Restarting sync with the new categorization...\n")
+            logger.end_run(success=False)
+            return run_sync(config, logger, dry_run=dry_run, auto_mode=auto_mode)
         else:
-            print(f"\n  {e}")
             print("  Please categorize this extent type in the setup wizard or config.")
-        logger.end_run(success=False)
-        return False
+            logger.end_run(success=False)
+            return False
 
     except Exception as e:
         logger.error(str(e))
