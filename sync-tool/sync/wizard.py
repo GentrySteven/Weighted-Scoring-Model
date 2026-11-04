@@ -828,9 +828,17 @@ class SetupWizard:
                     continue
             else:
                 print("  ⚠ Could not verify the folder.")
-                print("  This may mean the folder ID is incorrect, the folder")
-                print("  hasn't been shared with the service account, or there")
-                print("  is a network issue.")
+                auth_method = self.config.get_credential(
+                    "google", "auth_method", default="service_account"
+                )
+                if auth_method == "service_account":
+                    print("  This may mean the folder ID is incorrect, the folder")
+                    print("  hasn't been shared with the service account, or there")
+                    print("  is a network issue.")
+                else:
+                    print("  This may mean the folder ID is incorrect, the OAuth")
+                    print("  authorization was cancelled, or there is a network")
+                    print("  issue.")
                 choice = Menu.prompt_choice(
                     "What would you like to do?",
                     [
@@ -1018,14 +1026,65 @@ class SetupWizard:
                     key_path, scopes=scopes,
                 )
             else:
-                # OAuth — try to use existing token
+                # OAuth — load existing token or run the consent flow
+                from google.auth.transport.requests import Request
                 from google.oauth2.credentials import Credentials
+
+                # Use the full scopes needed by the sync tool so the
+                # token saved here works for later sync runs too.
+                scopes = [
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive",
+                ]
                 token_path = self.config.get_credential(
                     "google", "oauth_token_path", default=""
                 )
-                if not token_path or not Path(token_path).exists():
-                    return None
-                credentials = Credentials.from_authorized_user_file(token_path)
+                credentials = None
+
+                if token_path and Path(token_path).exists():
+                    credentials = Credentials.from_authorized_user_file(
+                        token_path, scopes,
+                    )
+
+                if not credentials or not credentials.valid:
+                    if credentials and credentials.expired and credentials.refresh_token:
+                        try:
+                            credentials.refresh(Request())
+                        except Exception:
+                            credentials = None
+
+                    if not credentials:
+                        # No valid token yet — run the browser-based OAuth
+                        # consent flow so the user authorises Drive access.
+                        from google_auth_oauthlib.flow import InstalledAppFlow
+
+                        client_id = self.config.get_credential(
+                            "google", "oauth_client_id", default=""
+                        )
+                        client_secret = self.config.get_credential(
+                            "google", "oauth_client_secret", default=""
+                        )
+                        if not client_id or not client_secret:
+                            return None
+
+                        print("  Opening browser for Google authorization...")
+                        flow = InstalledAppFlow.from_client_config(
+                            {"installed": {
+                                "client_id": client_id,
+                                "client_secret": client_secret,
+                                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                                "token_uri": "https://oauth2.googleapis.com/token",
+                            }},
+                            scopes,
+                        )
+                        credentials = flow.run_local_server(port=0)
+
+                        # Persist the token so later steps and sync runs
+                        # can reuse it without prompting again.
+                        if token_path:
+                            Path(token_path).parent.mkdir(parents=True, exist_ok=True)
+                            with open(token_path, "w") as f:
+                                f.write(credentials.to_json())
 
             from googleapiclient.discovery import build as google_build
             drive_service = google_build("drive", "v3", credentials=credentials)
